@@ -232,7 +232,7 @@ def refine_all(hull_verts, build_dims_sorted, fitting_results):
     return refined_fits
 
 
-def select_diverse(results, n=5):
+def select_diverse(results, n=10):
     """Select n diverse rotations using greedy farthest-point sampling.
 
     Uses geodesic distance on SO(3) as the metric.
@@ -387,8 +387,8 @@ def main():
             refined_fits = refine_all(hull_verts, build_dims_sorted, fitting_results)
 
             if len(refined_fits) > 0:
-                # Select up to 5 diverse solutions
-                diverse_solutions = select_diverse(refined_fits, n=min(5, len(refined_fits)))
+                # Select up to 10 diverse solutions
+                diverse_solutions = select_diverse(refined_fits, n=min(10, len(refined_fits)))
 
                 # Extract stem and extension from output path
                 import os

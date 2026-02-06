@@ -6,25 +6,11 @@ Determine if an STL model fits within a 3D printer build volume in any orientati
 
 This tool solves the optimal rotation / minimum bounding box problem for 3D printing. Given an STL file and a build volume, it finds the best orientation to fit the model, or reports if it's impossible.
 
-**Key optimizations:**
-
-1. **Convex hull reduction** — Only the convex hull vertices matter for computing axis-aligned bounding boxes. This reduces the working set from millions of vertices to thousands, making the search tractable.
-
-2. **Uniform SO(3) sampling** — Generates 500,000 uniformly distributed 3D rotations using `scipy.spatial.transform.Rotation.random()`, avoiding the gimbal lock and bias issues of naive Euler angle sweeps.
-
-3. **Vectorized projection method** — Computes AABB extents for thousands of rotations in parallel using optimized NumPy matrix operations, avoiding memory-intensive tensor allocations.
-
-4. **Multi-start local refinement** — Refines the top-5 coarse results using Nelder-Mead optimization to find the global optimum orientation.
-
-**Performance:** Processes 500,000 rotations in ~30 seconds for large medical scan models (1M+ triangles).
-
 ## Installation
 
 ```bash
 pip install -r requirements.txt
 ```
-
-Dependencies: `numpy`, `scipy`, `trimesh`
 
 ## Usage
 
@@ -62,31 +48,30 @@ python stl_fit.py --stl model.stl --samples 100000
 
 ### Export Rotated Model
 
-Save optimally rotated models as new STL files. When the model fits, the tool automatically exports **5 diverse orientations** to give you printing options:
+Save optimally rotated models as new STL files. When the model fits, the tool automatically exports **10 diverse orientations** to give you printing options:
 
 ```bash
 python stl_fit.py --stl model.stl --output rotated.stl
 ```
 
 This creates:
+
 - `rotated_1.stl` — Best orientation (minimizes bounding box)
 - `rotated_2.stl` — Maximally different orientation (~180° rotation)
-- `rotated_3.stl` — Another diverse orientation
-- `rotated_4.stl` — Another diverse orientation
-- `rotated_5.stl` — Another diverse orientation
+- `rotated_3.stl` through `rotated_10.stl` — Other diverse orientations
 
-**Why 5 orientations?** Different rotations offer different printing characteristics (support requirements, overhang angles, layer adhesion, etc.). The tool finds orientations that are as different as possible while still fitting, giving you practical choices for your specific printer and material.
+**Why 10 orientations?** Different rotations offer different printing characteristics (support requirements, overhang angles, layer adhesion, etc.). The tool finds orientations that are as different as possible while still fitting, giving you practical choices for your specific printer and material.
 
 ### Full Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--stl` | path | *(required)* | Path to STL file |
-| `--build-volume X Y Z` | float × 3 | `180 180 180` | Build volume dimensions in mm |
-| `--samples` | int | `500000` | Number of random rotations to test |
-| `--batch-size` | int | `5000` | Rotations processed per batch (auto-adjusted for memory) |
-| `--seed` | int | *(none)* | Random seed for reproducibility |
-| `--output` | path | *(none)* | Output path for rotated STL file |
+| Option                 | Type      | Default       | Description                                              |
+| ---------------------- | --------- | ------------- | -------------------------------------------------------- |
+| `--stl`                | path      | _(required)_  | Path to STL file                                         |
+| `--build-volume X Y Z` | float × 3 | `180 180 180` | Build volume dimensions in mm                            |
+| `--samples`            | int       | `500000`      | Number of random rotations to test                       |
+| `--batch-size`         | int       | `5000`        | Rotations processed per batch (auto-adjusted for memory) |
+| `--seed`               | int       | _(none)_      | Random seed for reproducibility                          |
+| `--output`             | path      | _(none)_      | Output path for rotated STL file                         |
 
 ## Example Output
 
@@ -127,23 +112,24 @@ Refining from top 5 candidates...
 ============================================================
 ```
 
-### With `--output` flag (exports 5 diverse orientations):
+### With `--output` flag (exports 10 diverse orientations):
 
-When you specify `--output`, the tool exports 5 maximally different orientations:
+When you specify `--output`, the tool exports 10 maximally different orientations:
 
 ```
 Refining all 982 fitting candidates...
   [100%] 982/982 refined, 982 still fit
   982 refined orientations still fit after optimization
 
-Selecting 5 maximally diverse orientations from 982 candidates...
+Selecting 10 maximally diverse orientations from 982 candidates...
   Solution 2: distance from nearest = 3.142 rad (180.0°)
   Solution 3: distance from nearest = 3.142 rad (180.0°)
   Solution 4: distance from nearest = 3.142 rad (180.0°)
   Solution 5: distance from nearest = 2.094 rad (120.0°)
+  ... (solutions 6-10 omitted for brevity)
 
 ============================================================
-  EXPORTING 5 DIVERSE ORIENTATIONS
+  EXPORTING 10 DIVERSE ORIENTATIONS
 ============================================================
 
 Solution 1:
@@ -160,10 +146,10 @@ Solution 2:
   Euler:     yaw=-136.4°, pitch=-6.8°, roll=82.8°
   Distance:  3.142 rad (180.0° from solution 1)
 
-... (solutions 3-5 omitted for brevity)
+... (solutions 3-10 omitted for brevity)
 
 ============================================================
-  Saved 5 rotated STL files successfully!
+  Saved 10 rotated STL files successfully!
 ============================================================
 ```
 
