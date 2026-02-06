@@ -1,10 +1,14 @@
-# STL Build Volume Fit Checker
+# stl-fit - STL orientation optimizer
 
-Determine if an STL model fits within a 3D printer build volume in any orientation by searching over all possible rotations.
+Get the most out of your 3D printer. Print models that weren't possible before!
+
+![](./.github/orientation.png)
 
 ## How It Works
 
 This tool solves the optimal rotation / minimum bounding box problem for 3D printing. Given an STL file and a build volume, it finds the best orientation to fit the model, or reports if it's impossible.
+
+The script is configured for a build volume of 180x180x180 by default (size of A1 mini, which often lacks presets for larger models on Makerworld)
 
 ## Installation
 
