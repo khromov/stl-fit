@@ -207,19 +207,6 @@ def refinement_phase(hull_verts, build_dims, top_k_results):
     return best_score, best_rotation, best_extents
 
 
-def compute_scale_factor(best_score):
-    """Compute the uniform scale factor needed to make the model fit.
-
-    Args:
-        best_score: the best score from refinement (max ratio of sorted extents / sorted build dims)
-
-    Returns:
-        scale_factor: value in (0.0, 1.0] such that scaling the model by this factor makes it fit.
-                      Returns 1.0 if the model already fits (score <= 1.0).
-    """
-    if best_score <= 1.0:
-        return 1.0
-    return 1.0 / best_score
 
 
 def select_diverse(results, n=10):
@@ -362,10 +349,13 @@ def main():
     # Auto-adjust batch size if needed for memory
     max_memory_bytes = 1e9  # 1 GB
     n_hull = len(hull_verts)
-    max_batch = int(max_memory_bytes / (n_hull * 3 * 8))
-    if args.batch_size > max_batch:
-        print(f"  Warning: Reducing batch size to {max_batch:,} for memory constraints")
-        args.batch_size = max_batch
+    auto_batch = int(max_memory_bytes / (n_hull * 3 * 8))
+    if args.batch_size == DEFAULT_BATCH_SIZE:
+        # Auto-scale: use maximum batch that fits in memory
+        args.batch_size = auto_batch
+    elif args.batch_size > auto_batch:
+        print(f"  Warning: Reducing batch size to {auto_batch:,} for memory constraints")
+        args.batch_size = auto_batch
 
     # Phase 2: Coarse search
     top_k_results, fitting_results = coarse_search(hull_verts, build_dims, args.samples, args.batch_size)
@@ -373,41 +363,36 @@ def main():
     # Phase 3: Refinement
     best_score, best_rotation, best_extents = refinement_phase(hull_verts, build_dims, top_k_results)
 
-    # Phase 3.5: Auto-scale if needed
-    scale_factor = compute_scale_factor(best_score)
-    scale_pct = scale_factor * 100.0
+    # Phase 3.5: Iterative scale-down if needed
+    scale_pct = 100.0
 
-    if best_score > 1.0:
-        print(f"\n{'=' * 60}")
-        print(f"  AUTO-SCALE: Shrinking to {scale_pct:.1f}% of original size")
-        print(f"{'=' * 60}")
+    while best_score > 1.0:
+        # Compute how much to shrink: reduce the bounding box by 1mm on each axis
+        # Current best extents tell us the model size; we want it 1mm smaller per axis
+        current_max_extent = np.sort(best_extents)[-1]
+        shrink = (current_max_extent - 1.0) / current_max_extent
+        hull_verts = hull_verts * shrink
+        mesh.vertices = mesh.vertices * shrink
+        scale_pct *= shrink
 
-        build_dims_sorted = np.sort(build_dims)
+        print(f"\n--- Shrinking by 1mm per axis (now {scale_pct:.1f}% of original) ---")
 
-        # Apply exact scale, then nudge down 0.1% at a time until it fits
-        hull_verts = hull_verts * scale_factor
-        mesh.vertices = mesh.vertices * scale_factor
+        # Re-run full search
+        top_k_results, fitting_results = coarse_search(hull_verts, build_dims, args.samples, args.batch_size)
+        best_score, best_rotation, best_extents = refinement_phase(hull_verts, build_dims, top_k_results)
 
-        while True:
-            best_score, best_rotation, best_extents = refine(hull_verts, build_dims_sorted, best_rotation)
-            if best_score <= 1.0:
-                break
-            nudge = 0.999
-            hull_verts = hull_verts * nudge
-            mesh.vertices = mesh.vertices * nudge
-            scale_factor *= nudge
-            scale_pct = scale_factor * 100.0
-            print(f"  Nudging down to {scale_pct:.1f}%...")
+    # If we had to scale and don't have enough diverse candidates, shrink once more
+    if scale_pct < 100.0 and len(fitting_results) < 10:
+        current_max_extent = np.sort(best_extents)[-1]
+        shrink = (current_max_extent - 1.0) / current_max_extent
+        hull_verts = hull_verts * shrink
+        mesh.vertices = mesh.vertices * shrink
+        scale_pct *= shrink
 
-        scale_pct = scale_factor * 100.0
+        print(f"\n--- Extra shrink for diversity (now {scale_pct:.1f}% of original) ---")
 
-        # Re-collect fitting_results on scaled hull for diverse solutions
-        print(f"\nRe-searching for diverse orientations at {scale_pct:.1f}% scale...")
-        _, fitting_results = coarse_search(hull_verts, build_dims, max(args.samples // 5, 100_000), args.batch_size)
-
-        # Ensure we have at least the verified best rotation in fitting_results
-        if best_score <= 1.0:
-            fitting_results.append((best_score, best_rotation, best_extents))
+        top_k_results, fitting_results = coarse_search(hull_verts, build_dims, args.samples, args.batch_size)
+        best_score, best_rotation, best_extents = refinement_phase(hull_verts, build_dims, top_k_results)
 
     # Report best result
     report_result(best_score, best_extents, best_rotation, build_dims, scale_pct=scale_pct)
@@ -438,7 +423,7 @@ def main():
             output_ext = os.path.splitext(args.output)[1] or '.stl'
 
             # Add scale tag if model was scaled
-            if scale_factor < 1.0:
+            if scale_pct < 100.0:
                 output_base = f"{output_base}_{scale_pct:.0f}pct"
 
             print(f"\n{'=' * 60}")
@@ -482,7 +467,7 @@ def main():
     else:
         # Model doesn't fit - export single best attempt anyway
         output_path = args.output
-        if scale_factor < 1.0:
+        if scale_pct < 100.0:
             output_stem, output_ext = os.path.splitext(args.output)
             output_path = f"{output_stem}_{scale_pct:.0f}pct{output_ext or '.stl'}"
 
