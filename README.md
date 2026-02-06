@@ -27,7 +27,7 @@ python stl_fit.py --stl model.stl
 Specify custom dimensions in millimeters (X Y Z):
 
 ```bash
-python stl_fit.py --stl model.stl --build-volume 200 200 300
+python stl_fit.py --stl model.stl --build-volume 180
 ```
 
 ### Reproducible Results
@@ -46,32 +46,47 @@ Reduce the number of sampled rotations for quicker (but less thorough) search:
 python stl_fit.py --stl model.stl --samples 100000
 ```
 
-### Export Rotated Model
+### Custom Build Volume
 
-Save optimally rotated models as new STL files. When the model fits, the tool automatically exports **10 diverse orientations** to give you printing options:
+Specify a different cubic build volume size in millimeters:
 
 ```bash
-python stl_fit.py --stl model.stl --output rotated.stl
+python stl_fit.py --stl model.stl --build-volume 170
+```
+
+### Automatic Export of Rotated Models
+
+When the model fits, the tool **automatically exports 10 diverse orientations** as new STL files:
+
+```bash
+python stl_fit.py --stl MedicalScan_Skull_TN.stl
 ```
 
 This creates:
 
-- `rotated_1.stl` — Best orientation (minimizes bounding box)
-- `rotated_2.stl` — Maximally different orientation (~180° rotation)
-- `rotated_3.stl` through `rotated_10.stl` — Other diverse orientations
+- `MedicalScan_Skull_TN_rotated_1.stl` — Best orientation (minimizes bounding box)
+- `MedicalScan_Skull_TN_rotated_2.stl` — Maximally different orientation (~180° rotation)
+- `MedicalScan_Skull_TN_rotated_3.stl` through `_10.stl` — Other diverse orientations
+
+**Customize the output name** with `--output`:
+
+```bash
+python stl_fit.py --stl model.stl --output custom.stl
+# Creates: custom_1.stl through custom_10.stl
+```
 
 **Why 10 orientations?** Different rotations offer different printing characteristics (support requirements, overhang angles, layer adhesion, etc.). The tool finds orientations that are as different as possible while still fitting, giving you practical choices for your specific printer and material.
 
 ### Full Options
 
-| Option                 | Type      | Default       | Description                                              |
-| ---------------------- | --------- | ------------- | -------------------------------------------------------- |
-| `--stl`                | path      | _(required)_  | Path to STL file                                         |
-| `--build-volume X Y Z` | float × 3 | `180 180 180` | Build volume dimensions in mm                            |
-| `--samples`            | int       | `500000`      | Number of random rotations to test                       |
-| `--batch-size`         | int       | `5000`        | Rotations processed per batch (auto-adjusted for memory) |
-| `--seed`               | int       | _(none)_      | Random seed for reproducibility                          |
-| `--output`             | path      | _(none)_      | Output path for rotated STL file                         |
+| Option           | Type  | Default      | Description                                              |
+| ---------------- | ----- | ------------ | -------------------------------------------------------- |
+| `--stl`          | path  | _(required)_ | Path to STL file                                         |
+| `--build-volume` | float | `180`        | Build volume cube size in mm                             |
+| `--samples`      | int   | `500000`     | Number of random rotations to test                       |
+| `--batch-size`   | int   | `5000`       | Rotations processed per batch (auto-adjusted for memory) |
+| `--seed`         | int   | _(none)_     | Random seed for reproducibility                          |
+| `--output`       | path  | _(auto)_     | Output path for rotated STL files (auto-generated)       |
 
 ## Example Output
 

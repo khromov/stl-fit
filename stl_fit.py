@@ -207,32 +207,6 @@ def refinement_phase(hull_verts, build_dims, top_k_results):
     return best_score, best_rotation, best_extents
 
 
-def refine_all(hull_verts, build_dims_sorted, fitting_results):
-    """Refine all fitting candidates and filter to those still fitting.
-
-    Returns:
-        refined_fits: list of (score, Rotation, extents) where refined score <= 1.0
-    """
-    print(f"\nRefining all {len(fitting_results):,} fitting candidates...")
-
-    refined_fits = []
-    report_interval = max(1, len(fitting_results) // 10)
-
-    for i, (coarse_score, rotation, _) in enumerate(fitting_results):
-        score, refined_rot, extents = refine(hull_verts, build_dims_sorted, rotation)
-
-        # Only keep if still fits after refinement
-        if score <= 1.0:
-            refined_fits.append((score, refined_rot, extents))
-
-        # Progress reporting
-        if (i + 1) % report_interval == 0 or i == len(fitting_results) - 1:
-            print(f"  [{100 * (i + 1) // len(fitting_results):3d}%] {i + 1}/{len(fitting_results)} refined, {len(refined_fits)} still fit")
-
-    print(f"  {len(refined_fits):,} refined orientations still fit after optimization")
-    return refined_fits
-
-
 def select_diverse(results, n=10):
     """Select n diverse rotations using greedy farthest-point sampling.
 
@@ -322,10 +296,9 @@ def main():
     parser.add_argument(
         "--build-volume",
         type=float,
-        nargs=3,
-        default=DEFAULT_BUILD_VOLUME,
-        metavar=("X", "Y", "Z"),
-        help="Build volume dimensions in mm (default: 180 180 180)"
+        default=180.0,
+        metavar="SIZE",
+        help="Build volume cube size in mm (default: 180)"
     )
     parser.add_argument(
         "--samples",
@@ -360,7 +333,8 @@ def main():
         input_stem, input_ext = os.path.splitext(args.stl)
         args.output = f"{input_stem}_rotated{input_ext or '.stl'}"
 
-    build_dims = np.array(args.build_volume)
+    # Build volume is a cube
+    build_dims = np.array([args.build_volume, args.build_volume, args.build_volume])
     print(f"Build volume:      {build_dims[0]:.1f} x {build_dims[1]:.1f} x {build_dims[2]:.1f} mm")
 
     # Phase 1: Load and prepare
@@ -388,13 +362,22 @@ def main():
 
     # If model fits, find diverse solutions
     if best_score <= 1.0 and len(fitting_results) > 0:
-        # Refine all fitting candidates
-        refined_fits = refine_all(hull_verts, build_dims_sorted, fitting_results)
+        # Select up to 10 diverse solutions from coarse results
+        diverse_coarse = select_diverse(fitting_results, n=min(10, len(fitting_results)))
 
-        if len(refined_fits) > 0:
-            # Select up to 10 diverse solutions
-            diverse_solutions = select_diverse(refined_fits, n=min(10, len(refined_fits)))
+        # Refine only the selected 10
+        print(f"\nRefining {len(diverse_coarse)} diverse candidates...")
+        diverse_solutions = []
+        for i, (coarse_score, rotation, _) in enumerate(diverse_coarse, start=1):
+            score, refined_rot, extents = refine(hull_verts, build_dims_sorted, rotation)
+            # Only keep if still fits after refinement
+            if score <= 1.0:
+                diverse_solutions.append((score, refined_rot, extents))
+                print(f"  Solution {i}: coarse {coarse_score:.4f} -> refined {score:.4f}")
+            else:
+                print(f"  Solution {i}: coarse {coarse_score:.4f} -> refined {score:.4f} (no longer fits, skipped)")
 
+        if len(diverse_solutions) > 0:
             # Extract stem and extension from output path
             output_base = os.path.splitext(args.output)[0]
             output_ext = os.path.splitext(args.output)[1] or '.stl'
