@@ -2,6 +2,7 @@
 """Check if an STL model fits in a build volume by searching over rotations."""
 
 import argparse
+import os
 import sys
 import time
 import numpy as np
@@ -354,6 +355,11 @@ def main():
     if args.seed is not None:
         np.random.seed(args.seed)
 
+    # Set default output path based on input filename if not provided
+    if args.output is None:
+        input_stem, input_ext = os.path.splitext(args.stl)
+        args.output = f"{input_stem}_rotated{input_ext or '.stl'}"
+
     build_dims = np.array(args.build_volume)
     print(f"Build volume:      {build_dims[0]:.1f} x {build_dims[1]:.1f} x {build_dims[2]:.1f} mm")
 
@@ -377,70 +383,68 @@ def main():
     # Report best result
     report_result(best_score, best_extents, best_rotation, build_dims)
 
-    # Export rotated mesh(es) if requested
-    if args.output:
-        build_dims_sorted = np.sort(build_dims)
+    # Export rotated meshes
+    build_dims_sorted = np.sort(build_dims)
 
-        # If model fits, find diverse solutions
-        if best_score <= 1.0 and len(fitting_results) > 0:
-            # Refine all fitting candidates
-            refined_fits = refine_all(hull_verts, build_dims_sorted, fitting_results)
+    # If model fits, find diverse solutions
+    if best_score <= 1.0 and len(fitting_results) > 0:
+        # Refine all fitting candidates
+        refined_fits = refine_all(hull_verts, build_dims_sorted, fitting_results)
 
-            if len(refined_fits) > 0:
-                # Select up to 10 diverse solutions
-                diverse_solutions = select_diverse(refined_fits, n=min(10, len(refined_fits)))
+        if len(refined_fits) > 0:
+            # Select up to 10 diverse solutions
+            diverse_solutions = select_diverse(refined_fits, n=min(10, len(refined_fits)))
 
-                # Extract stem and extension from output path
-                import os
-                output_base = os.path.splitext(args.output)[0]
-                output_ext = os.path.splitext(args.output)[1] or '.stl'
+            # Extract stem and extension from output path
+            output_base = os.path.splitext(args.output)[0]
+            output_ext = os.path.splitext(args.output)[1] or '.stl'
 
-                print(f"\n{'=' * 60}")
-                print(f"  EXPORTING {len(diverse_solutions)} DIVERSE ORIENTATIONS")
-                print(f"{'=' * 60}")
+            print(f"\n{'=' * 60}")
+            print(f"  EXPORTING {len(diverse_solutions)} DIVERSE ORIENTATIONS")
+            print(f"{'=' * 60}")
 
-                # Export each diverse solution
-                for i, (score, rotation, extents) in enumerate(diverse_solutions, start=1):
-                    output_path = f"{output_base}_{i}{output_ext}"
+            # Export each diverse solution
+            for i, (score, rotation, extents) in enumerate(diverse_solutions, start=1):
+                output_path = f"{output_base}_{i}{output_ext}"
 
-                    # Compute metrics
-                    extents_sorted = np.sort(extents)
-                    margins = build_dims_sorted - extents_sorted
-                    euler = rotation.as_euler('zyx', degrees=True)
+                # Compute metrics
+                extents_sorted = np.sort(extents)
+                margins = build_dims_sorted - extents_sorted
+                euler = rotation.as_euler('zyx', degrees=True)
 
-                    # Compute distance from first solution
-                    if i == 1:
-                        geodesic_dist = 0.0
-                    else:
-                        geodesic_dist = (rotation * diverse_solutions[0][1].inv()).magnitude()
+                # Compute distance from first solution
+                if i == 1:
+                    geodesic_dist = 0.0
+                else:
+                    geodesic_dist = (rotation * diverse_solutions[0][1].inv()).magnitude()
 
-                    # Print summary
-                    print(f"\nSolution {i}:")
-                    print(f"  File:      {output_path}")
-                    print(f"  AABB:      {extents_sorted[0]:.1f} x {extents_sorted[1]:.1f} x {extents_sorted[2]:.1f} mm")
-                    print(f"  Margins:   +{margins[0]:.1f}, +{margins[1]:.1f}, +{margins[2]:.1f} mm")
-                    print(f"  Euler:     yaw={euler[0]:.1f}°, pitch={euler[1]:.1f}°, roll={euler[2]:.1f}°")
-                    print(f"  Distance:  {geodesic_dist:.3f} rad ({np.degrees(geodesic_dist):.1f}° from solution 1)")
+                # Print summary
+                print(f"\nSolution {i}:")
+                print(f"  File:      {output_path}")
+                print(f"  AABB:      {extents_sorted[0]:.1f} x {extents_sorted[1]:.1f} x {extents_sorted[2]:.1f} mm")
+                print(f"  Margins:   +{margins[0]:.1f}, +{margins[1]:.1f}, +{margins[2]:.1f} mm")
+                print(f"  Euler:     yaw={euler[0]:.1f}°, pitch={euler[1]:.1f}°, roll={euler[2]:.1f}°")
+                print(f"  Distance:  {geodesic_dist:.3f} rad ({np.degrees(geodesic_dist):.1f}° from solution 1)")
 
-                    # Export
-                    rotated_mesh = mesh.copy()
-                    rotation_matrix = rotation.as_matrix()
-                    rotated_mesh.vertices = rotated_mesh.vertices @ rotation_matrix.T
-                    rotated_mesh.export(output_path)
+                # Export
+                rotated_mesh = mesh.copy()
+                rotation_matrix = rotation.as_matrix()
+                rotated_mesh.vertices = rotated_mesh.vertices @ rotation_matrix.T
+                rotated_mesh.export(output_path)
 
-                print(f"\n{'=' * 60}")
-                print(f"  Saved {len(diverse_solutions)} rotated STL files successfully!")
-                print(f"{'=' * 60}")
-            else:
-                print("\nWarning: No fitting solutions remained after refinement.")
+            print(f"\n{'=' * 60}")
+            print(f"  Saved {len(diverse_solutions)} rotated STL files successfully!")
+            print(f"{'=' * 60}")
         else:
-            # Model doesn't fit - export single best attempt anyway
-            print(f"\nModel does not fit, but exporting best attempt to: {args.output}")
-            rotated_mesh = mesh.copy()
-            rotation_matrix = best_rotation.as_matrix()
-            rotated_mesh.vertices = rotated_mesh.vertices @ rotation_matrix.T
-            rotated_mesh.export(args.output)
-            print(f"  Saved!")
+            print("\nWarning: No fitting solutions remained after refinement.")
+    else:
+        # Model doesn't fit - export single best attempt anyway
+        print(f"\nModel does not fit, but exporting best attempt to: {args.output}")
+        rotated_mesh = mesh.copy()
+        rotation_matrix = best_rotation.as_matrix()
+        rotated_mesh.vertices = rotated_mesh.vertices @ rotation_matrix.T
+        rotated_mesh.export(args.output)
+        print(f"  Saved!")
 
     # Exit with appropriate code
     sys.exit(0 if best_score <= 1.0 else 1)
