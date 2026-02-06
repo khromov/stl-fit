@@ -19,31 +19,7 @@ pip install -r requirements.txt
 Check if a model fits in the default 180×180×180mm build volume:
 
 ```bash
-python stl_fit.py --stl model.stl
-```
-
-### Custom Build Volume
-
-Specify custom dimensions in millimeters (X Y Z):
-
-```bash
-python stl_fit.py --stl model.stl --build-volume 180
-```
-
-### Reproducible Results
-
-Use a random seed for deterministic results:
-
-```bash
-python stl_fit.py --stl model.stl --seed 42
-```
-
-### Faster Search
-
-Reduce the number of sampled rotations for quicker (but less thorough) search:
-
-```bash
-python stl_fit.py --stl model.stl --samples 100000
+python3 stl_fit.py --stl model.stl
 ```
 
 ### Custom Build Volume
@@ -51,7 +27,23 @@ python stl_fit.py --stl model.stl --samples 100000
 Specify a different cubic build volume size in millimeters:
 
 ```bash
-python stl_fit.py --stl model.stl --build-volume 170
+python3 stl_fit.py --stl model.stl --build-volume 170
+```
+
+### Reproducible Results
+
+Use a random seed for deterministic results:
+
+```bash
+python3 stl_fit.py --stl model.stl --seed 42
+```
+
+### Faster Search
+
+Reduce the number of sampled rotations for quicker (but less thorough) search:
+
+```bash
+python3 stl_fit.py --stl model.stl --samples 100000
 ```
 
 ### Automatic Export of Rotated Models
@@ -59,7 +51,7 @@ python stl_fit.py --stl model.stl --build-volume 170
 When the model fits, the tool **automatically exports 10 diverse orientations** as new STL files:
 
 ```bash
-python stl_fit.py --stl MedicalScan_Skull_TN.stl
+python3 stl_fit.py --stl MedicalScan_Skull_TN.stl
 ```
 
 This creates:
@@ -71,7 +63,7 @@ This creates:
 **Customize the output name** with `--output`:
 
 ```bash
-python stl_fit.py --stl model.stl --output custom.stl
+python3 stl_fit.py --stl model.stl --output custom.stl
 # Creates: custom_1.stl through custom_10.stl
 ```
 
@@ -127,21 +119,22 @@ Refining from top 5 candidates...
 ============================================================
 ```
 
-### With `--output` flag (exports 10 diverse orientations):
+### Diverse orientation export (automatic):
 
-When you specify `--output`, the tool exports 10 maximally different orientations:
+The tool automatically exports 10 maximally different orientations:
 
 ```
-Refining all 982 fitting candidates...
-  [100%] 982/982 refined, 982 still fit
-  982 refined orientations still fit after optimization
-
 Selecting 10 maximally diverse orientations from 982 candidates...
   Solution 2: distance from nearest = 3.142 rad (180.0°)
   Solution 3: distance from nearest = 3.142 rad (180.0°)
   Solution 4: distance from nearest = 3.142 rad (180.0°)
   Solution 5: distance from nearest = 2.094 rad (120.0°)
   ... (solutions 6-10 omitted for brevity)
+
+Refining 10 diverse candidates...
+  Solution 1: coarse 0.9727 -> refined 0.9702
+  Solution 2: coarse 0.9745 -> refined 0.9702
+  ... (solutions 3-10 omitted for brevity)
 
 ============================================================
   EXPORTING 10 DIVERSE ORIENTATIONS
