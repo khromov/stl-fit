@@ -20,7 +20,7 @@ pip install -r requirements.txt
 
 ### Running the Tool
 
-Basic usage (default 180×180×180mm build volume):
+Basic usage (default 180x180x180mm build volume):
 ```bash
 python3 stl_fit.py --stl model.stl
 ```
@@ -45,54 +45,54 @@ Custom output path:
 python3 stl_fit.py --stl model.stl --output custom.stl
 ```
 
+### Running Tests
+```bash
+python3 -m pytest test_stl_fit.py -v
+```
+
+Run a single test class or method:
+```bash
+python3 -m pytest test_stl_fit.py::TestComputeAABBExtentsBatch -v
+python3 -m pytest test_stl_fit.py::TestRefine::test_improves_score -v
+```
+
+Tests generate geometry programmatically (no external STL files needed).
+
+**Note:** The test file imports from `stl_fit` (which re-exported from `stl_fit_lib` in the old single-file layout). After modularization, test imports reference `stl_fit_lib` symbols via `stl_fit`. If adding new library functions, export them from both modules or update test imports.
+
 ## Architecture
+
+### File Structure
+
+- `stl_fit.py` — CLI entry point: argument parsing, orchestration loop (coarse search, refinement, scale-down, diverse export)
+- `stl_fit_lib.py` — Core library: all algorithm functions and constants
+- `test_stl_fit.py` — pytest test suite with fixtures and tests for each core function
+- `requirements.txt` — Dependencies: numpy, scipy, trimesh
 
 ### Core Algorithm Flow
 
 The tool uses a two-phase optimization approach:
 
-1. **Load & Prepare** (`load_and_prepare`)
-   - Load STL mesh using trimesh
-   - Handle multi-body STL files (Scene objects)
-   - Compute convex hull to reduce vertex count (100-1000× reduction)
-   - Center mesh and hull at origin for rotation stability
+1. **Load & Prepare** (`load_and_prepare`) — Load STL via trimesh, handle multi-body Scene objects, compute convex hull (100-1000x vertex reduction), center at origin.
 
-2. **Coarse Search** (`coarse_search`)
-   - Generate uniform random rotations over SO(3) using `scipy.spatial.transform.Rotation.random()`
-   - Process rotations in batches for memory efficiency
-   - Use vectorized projection method to compute AABB extents for entire batches
-   - Track ALL fitting solutions (score ≤ 1.0), not just the best
-   - Return top-K candidates for refinement
+2. **Coarse Search** (`coarse_search`) — Generate uniform random rotations over SO(3), process in batches, use vectorized projection to compute AABB extents. Tracks ALL fitting solutions (score <= 1.0) and returns top-K candidates.
 
-3. **Refinement Phase** (`refinement_phase`)
-   - Use Nelder-Mead optimization to locally refine top-K candidates
-   - Parameterize rotations as rotation vectors (avoids gimbal lock)
-   - Minimize the max ratio of (sorted AABB dims) / (sorted build dims)
+3. **Refinement Phase** (`refinement_phase`) — Nelder-Mead optimization on top-K candidates, parameterized as rotation vectors to avoid gimbal lock. Minimizes max ratio of sorted(AABB dims) / sorted(build dims).
 
-4. **Diverse Solution Selection** (`select_diverse`)
-   - Select up to 10 maximally diverse fitting orientations using greedy farthest-point sampling
-   - Measure diversity using geodesic distance on SO(3): `(R1 * R2.inv()).magnitude()`
-   - Refine the diverse candidates and export as separate STL files
-   - Provides users with practical printing options (different support/overhang characteristics)
+4. **Iterative Scale-Down** (in `main()`) — If no fit found, shrinks model by 1mm per axis iteratively until it fits, then does an extra shrink for diversity if needed.
+
+5. **Diverse Solution Selection** (`select_diverse`) — Greedy farthest-point sampling using geodesic distance on SO(3): `(R1 * R2.inv()).magnitude()`. Selects up to 10 maximally diverse fitting orientations and exports as separate STL files.
 
 ### Key Implementation Details
 
-**Sorted-dimension comparison:** The tool compares `sorted(AABB_extents)` against `sorted(build_volume)`. This correctly solves the axis assignment problem—which model dimension maps to which printer dimension—without combinatorial search. A model fits if and only if the sorted extents fit within the sorted build volume.
+**Sorted-dimension comparison:** Compares `sorted(AABB_extents)` against `sorted(build_volume)`. This solves the axis assignment problem without combinatorial search. A model fits iff sorted extents fit within sorted build volume.
 
-**Vectorized AABB computation** (`compute_aabb_extents_batch`): Instead of rotating hull vertices and computing min/max, the tool projects hull vertices onto the 3 axis directions defined by each rotation matrix. This enables batch processing of thousands of rotations using numpy matrix operations.
+**Vectorized AABB computation** (`compute_aabb_extents_batch`): Projects hull vertices onto rotation matrix axis directions, enabling batch processing of thousands of rotations via numpy matrix ops. Memory-bounded to ~1GB by auto-adjusting batch size based on hull vertex count.
 
-**Memory management:** Batch size is auto-adjusted based on hull vertex count to stay under ~1GB memory usage during the projection step.
-
-**Rotation representation:** Uses rotation vectors (axis-angle) during optimization to avoid gimbal lock and quaternion/Euler angle singularities.
-
-### File Structure
-
-- `stl_fit.py` - Single-file implementation containing all logic
-- `requirements.txt` - Dependencies: numpy, scipy, trimesh
-- `.gitignore` - Excludes `.claude/` and generated `*_rotated*.stl` files
+**Rotation representation:** Uses rotation vectors (axis-angle) during optimization to avoid gimbal lock and singularities.
 
 ### Dependencies
 
 - **numpy**: Array operations and vectorized computations
-- **scipy**: Rotation handling (`scipy.spatial.transform.Rotation`) and optimization (`scipy.optimize.minimize`)
-- **trimesh**: STL loading, mesh operations, and convex hull computation
+- **scipy**: `scipy.spatial.transform.Rotation` for SO(3) rotations, `scipy.optimize.minimize` for Nelder-Mead refinement
+- **trimesh**: STL loading, mesh operations, convex hull computation
