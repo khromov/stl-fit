@@ -84,102 +84,14 @@ python3 stl_fit.py --stl model.stl --output custom.stl
 | `--seed`         | int   | _(none)_     | Random seed for reproducibility                          |
 | `--output`       | path  | _(auto)_     | Output path for rotated STL files (auto-generated)       |
 
-## Example Output
+## Testing
 
-### When the model fits:
-
-```
-Build volume:      180.0 x 180.0 x 180.0 mm
-Loading STL: MedicalScan_Skull_TN.stl
-  Triangles:       1,876,176
-  Vertices:        938,071
-  Original AABB:   144.7 x 215.5 x 161.3 mm
-  Convex hull:     41,134 vertices
-
-Coarse search: 500,000 random rotations (batch size 1,012)
-  [100%] 495/495 batches (32.4s) | Best score: 0.9727
-  Best score: 0.9727 (fit found!)
-  Found 982 fitting orientations in coarse search
-
-Refining from top 5 candidates...
-  Start 1: coarse 0.9727 -> refined 0.9702
-  Start 2: coarse 0.9745 -> refined 0.9702
-  Start 3: coarse 0.9833 -> refined 0.9702
-  Start 4: coarse 0.9875 -> refined 0.9709
-  Start 5: coarse 0.9890 -> refined 0.9749
-  Best refined score: 0.9702
-
-============================================================
-  RESULT: FIT
-============================================================
-  Bounding box:  174.6 x 174.6 x 174.6 mm
-                 (sorted: 174.6, 174.6, 174.6)
-  Build volume:  180.0 x 180.0 x 180.0 mm
-                 (sorted: 180.0, 180.0, 180.0)
-  Margins:       +5.4, +5.4, +5.4 mm
-
-  Rotation (Euler ZYX): yaw=-89.5°, pitch=80.2°, roll=-46.4°
-  Rotation (rotvec):    [-1.657, 0.546, -1.775]
-============================================================
+```bash
+pip install pytest
+python3 -m pytest test_stl_fit.py -v
 ```
 
-### Diverse orientation export (automatic):
-
-The tool automatically exports 10 maximally different orientations:
-
-```
-Selecting 10 maximally diverse orientations from 982 candidates...
-  Solution 2: distance from nearest = 3.142 rad (180.0°)
-  Solution 3: distance from nearest = 3.142 rad (180.0°)
-  Solution 4: distance from nearest = 3.142 rad (180.0°)
-  Solution 5: distance from nearest = 2.094 rad (120.0°)
-  ... (solutions 6-10 omitted for brevity)
-
-Refining 10 diverse candidates...
-  Solution 1: coarse 0.9727 -> refined 0.9702
-  Solution 2: coarse 0.9745 -> refined 0.9702
-  ... (solutions 3-10 omitted for brevity)
-
-============================================================
-  EXPORTING 10 DIVERSE ORIENTATIONS
-============================================================
-
-Solution 1:
-  File:      rotated_1.stl
-  AABB:      174.6 x 174.6 x 174.6 mm
-  Margins:   +5.4, +5.4, +5.4 mm
-  Euler:     yaw=43.6°, pitch=6.8°, roll=97.2°
-  Distance:  0.000 rad (0.0° from solution 1)
-
-Solution 2:
-  File:      rotated_2.stl
-  AABB:      174.6 x 174.6 x 174.6 mm
-  Margins:   +5.4, +5.4, +5.4 mm
-  Euler:     yaw=-136.4°, pitch=-6.8°, roll=82.8°
-  Distance:  3.142 rad (180.0° from solution 1)
-
-... (solutions 3-10 omitted for brevity)
-
-============================================================
-  Saved 10 rotated STL files successfully!
-============================================================
-```
-
-### When the model doesn't fit:
-
-```
-============================================================
-  RESULT: DOES NOT FIT
-============================================================
-  Best bounding box: 182.1 x 179.4 x 176.8 mm
-  Build volume:      180.0 x 180.0 x 180.0 mm
-  Excess:            +2.1, 0.0, 0.0 mm  (exceeds by 2.1mm on one axis)
-  Score:             1.0117 (needs 1.17% reduction to fit)
-
-  Closest rotation (Euler ZYX): yaw=34.2°, pitch=-12.7°, roll=67.1°
-  Rotation (rotvec):    [0.234, -1.023, 0.871]
-============================================================
-```
+No external STL files are needed — test fixtures generate geometry programmatically.
 
 ## Exit Codes
 
