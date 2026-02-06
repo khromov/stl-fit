@@ -84,6 +84,24 @@ python3 stl_fit.py --stl model.stl --output custom.stl
 | `--seed`         | int   | _(none)_     | Random seed for reproducibility                          |
 | `--output`       | path  | _(auto)_     | Output path for rotated STL files (auto-generated)       |
 
+## HTTP API
+
+A Flask API is also available for programmatic access:
+
+```bash
+python3 api.py  # starts on http://localhost:8000
+```
+
+Upload an STL and get back the optimally rotated version:
+
+```bash
+curl -X POST -F "file=@MedicalScan_Skull_TN.stl" -o rotated.stl http://localhost:8000/optimize
+```
+
+Optional form fields: `build_volume` (default 180), `samples` (default 500000), `seed`.
+
+Response headers include `X-STL-Fit-Score`, `X-STL-Fit-Scale-Percent`, and `X-STL-Fit-Extents`.
+
 ## Testing
 
 ```bash
