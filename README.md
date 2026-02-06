@@ -60,6 +60,16 @@ Reduce the number of sampled rotations for quicker (but less thorough) search:
 python stl_fit.py --stl model.stl --samples 100000
 ```
 
+### Export Rotated Model
+
+Save the optimally rotated model as a new STL file:
+
+```bash
+python stl_fit.py --stl model.stl --output rotated.stl
+```
+
+This exports the model with the optimal rotation applied. You can then import `rotated.stl` into your slicer software, where it will be correctly oriented to fit within the build volume.
+
 ### Full Options
 
 | Option | Type | Default | Description |
@@ -69,6 +79,7 @@ python stl_fit.py --stl model.stl --samples 100000
 | `--samples` | int | `500000` | Number of random rotations to test |
 | `--batch-size` | int | `5000` | Rotations processed per batch (auto-adjusted for memory) |
 | `--seed` | int | *(none)* | Random seed for reproducibility |
+| `--output` | path | *(none)* | Output path for rotated STL file |
 
 ## Example Output
 
