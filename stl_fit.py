@@ -207,6 +207,21 @@ def refinement_phase(hull_verts, build_dims, top_k_results):
     return best_score, best_rotation, best_extents
 
 
+def compute_scale_factor(best_score):
+    """Compute the uniform scale factor needed to make the model fit.
+
+    Args:
+        best_score: the best score from refinement (max ratio of sorted extents / sorted build dims)
+
+    Returns:
+        scale_factor: value in (0.0, 1.0] such that scaling the model by this factor makes it fit.
+                      Returns 1.0 if the model already fits (score <= 1.0).
+    """
+    if best_score <= 1.0:
+        return 1.0
+    return 1.0 / best_score
+
+
 def select_diverse(results, n=10):
     """Select n diverse rotations using greedy farthest-point sampling.
 
@@ -253,7 +268,7 @@ def select_diverse(results, n=10):
     return selected
 
 
-def report_result(score, extents, rotation, build_dims):
+def report_result(score, extents, rotation, build_dims, scale_pct=100.0):
     """Print final formatted result."""
     build_dims_sorted = np.sort(build_dims)
     extents_sorted = np.sort(extents)
@@ -262,11 +277,15 @@ def report_result(score, extents, rotation, build_dims):
 
     print("\n" + "=" * 60)
     if fits:
-        print("  RESULT: FIT")
+        if scale_pct < 100.0:
+            print(f"  RESULT: FIT (scaled to {scale_pct:.1f}%)")
+        else:
+            print("  RESULT: FIT")
     else:
         print("  RESULT: DOES NOT FIT")
     print("=" * 60)
 
+    print(f"  Scale:         {scale_pct:.1f}%")
     print(f"  Bounding box:  {extents[0]:.1f} x {extents[1]:.1f} x {extents[2]:.1f} mm")
     print(f"                 (sorted: {extents_sorted[0]:.1f}, {extents_sorted[1]:.1f}, {extents_sorted[2]:.1f})")
     print(f"  Build volume:  {build_dims[0]:.1f} x {build_dims[1]:.1f} x {build_dims[2]:.1f} mm")
@@ -354,8 +373,44 @@ def main():
     # Phase 3: Refinement
     best_score, best_rotation, best_extents = refinement_phase(hull_verts, build_dims, top_k_results)
 
+    # Phase 3.5: Auto-scale if needed
+    scale_factor = compute_scale_factor(best_score)
+    scale_pct = scale_factor * 100.0
+
+    if best_score > 1.0:
+        print(f"\n{'=' * 60}")
+        print(f"  AUTO-SCALE: Shrinking to {scale_pct:.1f}% of original size")
+        print(f"{'=' * 60}")
+
+        build_dims_sorted = np.sort(build_dims)
+
+        # Apply exact scale, then nudge down 0.1% at a time until it fits
+        hull_verts = hull_verts * scale_factor
+        mesh.vertices = mesh.vertices * scale_factor
+
+        while True:
+            best_score, best_rotation, best_extents = refine(hull_verts, build_dims_sorted, best_rotation)
+            if best_score <= 1.0:
+                break
+            nudge = 0.999
+            hull_verts = hull_verts * nudge
+            mesh.vertices = mesh.vertices * nudge
+            scale_factor *= nudge
+            scale_pct = scale_factor * 100.0
+            print(f"  Nudging down to {scale_pct:.1f}%...")
+
+        scale_pct = scale_factor * 100.0
+
+        # Re-collect fitting_results on scaled hull for diverse solutions
+        print(f"\nRe-searching for diverse orientations at {scale_pct:.1f}% scale...")
+        _, fitting_results = coarse_search(hull_verts, build_dims, max(args.samples // 5, 100_000), args.batch_size)
+
+        # Ensure we have at least the verified best rotation in fitting_results
+        if best_score <= 1.0:
+            fitting_results.append((best_score, best_rotation, best_extents))
+
     # Report best result
-    report_result(best_score, best_extents, best_rotation, build_dims)
+    report_result(best_score, best_extents, best_rotation, build_dims, scale_pct=scale_pct)
 
     # Export rotated meshes
     build_dims_sorted = np.sort(build_dims)
@@ -381,6 +436,10 @@ def main():
             # Extract stem and extension from output path
             output_base = os.path.splitext(args.output)[0]
             output_ext = os.path.splitext(args.output)[1] or '.stl'
+
+            # Add scale tag if model was scaled
+            if scale_factor < 1.0:
+                output_base = f"{output_base}_{scale_pct:.0f}pct"
 
             print(f"\n{'=' * 60}")
             print(f"  EXPORTING {len(diverse_solutions)} DIVERSE ORIENTATIONS")
@@ -422,11 +481,16 @@ def main():
             print("\nWarning: No fitting solutions remained after refinement.")
     else:
         # Model doesn't fit - export single best attempt anyway
-        print(f"\nModel does not fit, but exporting best attempt to: {args.output}")
+        output_path = args.output
+        if scale_factor < 1.0:
+            output_stem, output_ext = os.path.splitext(args.output)
+            output_path = f"{output_stem}_{scale_pct:.0f}pct{output_ext or '.stl'}"
+
+        print(f"\nModel does not fit, but exporting best attempt to: {output_path}")
         rotated_mesh = mesh.copy()
         rotation_matrix = best_rotation.as_matrix()
         rotated_mesh.vertices = rotated_mesh.vertices @ rotation_matrix.T
-        rotated_mesh.export(args.output)
+        rotated_mesh.export(output_path)
         print(f"  Saved!")
 
     # Exit with appropriate code
