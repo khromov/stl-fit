@@ -62,13 +62,20 @@ python stl_fit.py --stl model.stl --samples 100000
 
 ### Export Rotated Model
 
-Save the optimally rotated model as a new STL file:
+Save optimally rotated models as new STL files. When the model fits, the tool automatically exports **5 diverse orientations** to give you printing options:
 
 ```bash
 python stl_fit.py --stl model.stl --output rotated.stl
 ```
 
-This exports the model with the optimal rotation applied. You can then import `rotated.stl` into your slicer software, where it will be correctly oriented to fit within the build volume.
+This creates:
+- `rotated_1.stl` — Best orientation (minimizes bounding box)
+- `rotated_2.stl` — Maximally different orientation (~180° rotation)
+- `rotated_3.stl` — Another diverse orientation
+- `rotated_4.stl` — Another diverse orientation
+- `rotated_5.stl` — Another diverse orientation
+
+**Why 5 orientations?** Different rotations offer different printing characteristics (support requirements, overhang angles, layer adhesion, etc.). The tool finds orientations that are as different as possible while still fitting, giving you practical choices for your specific printer and material.
 
 ### Full Options
 
@@ -96,6 +103,7 @@ Loading STL: MedicalScan_Skull_TN.stl
 Coarse search: 500,000 random rotations (batch size 1,012)
   [100%] 495/495 batches (32.4s) | Best score: 0.9727
   Best score: 0.9727 (fit found!)
+  Found 982 fitting orientations in coarse search
 
 Refining from top 5 candidates...
   Start 1: coarse 0.9727 -> refined 0.9702
@@ -116,6 +124,46 @@ Refining from top 5 candidates...
 
   Rotation (Euler ZYX): yaw=-89.5°, pitch=80.2°, roll=-46.4°
   Rotation (rotvec):    [-1.657, 0.546, -1.775]
+============================================================
+```
+
+### With `--output` flag (exports 5 diverse orientations):
+
+When you specify `--output`, the tool exports 5 maximally different orientations:
+
+```
+Refining all 982 fitting candidates...
+  [100%] 982/982 refined, 982 still fit
+  982 refined orientations still fit after optimization
+
+Selecting 5 maximally diverse orientations from 982 candidates...
+  Solution 2: distance from nearest = 3.142 rad (180.0°)
+  Solution 3: distance from nearest = 3.142 rad (180.0°)
+  Solution 4: distance from nearest = 3.142 rad (180.0°)
+  Solution 5: distance from nearest = 2.094 rad (120.0°)
+
+============================================================
+  EXPORTING 5 DIVERSE ORIENTATIONS
+============================================================
+
+Solution 1:
+  File:      rotated_1.stl
+  AABB:      174.6 x 174.6 x 174.6 mm
+  Margins:   +5.4, +5.4, +5.4 mm
+  Euler:     yaw=43.6°, pitch=6.8°, roll=97.2°
+  Distance:  0.000 rad (0.0° from solution 1)
+
+Solution 2:
+  File:      rotated_2.stl
+  AABB:      174.6 x 174.6 x 174.6 mm
+  Margins:   +5.4, +5.4, +5.4 mm
+  Euler:     yaw=-136.4°, pitch=-6.8°, roll=82.8°
+  Distance:  3.142 rad (180.0° from solution 1)
+
+... (solutions 3-5 omitted for brevity)
+
+============================================================
+  Saved 5 rotated STL files successfully!
 ============================================================
 ```
 

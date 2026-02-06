@@ -86,7 +86,8 @@ def coarse_search(hull_verts, build_dims, num_samples, batch_size):
     """Perform coarse SO(3) search over random rotations.
 
     Returns:
-        top_results: list of (score, rotation, extents) sorted by score
+        top_k: list of top-K (score, rotation, extents) for refinement
+        fitting_results: list of ALL (score, rotation, extents) where score <= 1.0
     """
     print(f"\nCoarse search: {num_samples:,} random rotations (batch size {batch_size:,})")
 
@@ -98,6 +99,7 @@ def coarse_search(hull_verts, build_dims, num_samples, batch_size):
 
     # Track top results (score, rotation_idx, extents)
     top_results = []
+    fitting_results = []  # NEW: collect ALL fitting rotations
     best_score = float('inf')
 
     num_batches = (num_samples + batch_size - 1) // batch_size
@@ -129,6 +131,16 @@ def coarse_search(hull_verts, build_dims, num_samples, batch_size):
                 extents[batch_best_idx]
             ))
 
+        # NEW: Collect ALL fitting rotations in this batch
+        fitting_mask = scores <= 1.0
+        for local_idx in np.where(fitting_mask)[0]:
+            global_idx = start_idx + local_idx
+            fitting_results.append((
+                scores[local_idx],
+                rotations[global_idx],
+                extents[local_idx]
+            ))
+
         # Progress indicator
         if (batch_idx + 1) % max(1, num_batches // 10) == 0 or batch_idx == num_batches - 1:
             elapsed = time.time() - start_time
@@ -141,8 +153,9 @@ def coarse_search(hull_verts, build_dims, num_samples, batch_size):
 
     fits = best_score <= 1.0
     print(f"  Best score: {best_score:.4f} {'(fit found!)' if fits else '(no fit in coarse search)'}")
+    print(f"  Found {len(fitting_results):,} fitting orientations in coarse search")
 
-    return top_k
+    return top_k, fitting_results
 
 
 def refine(hull_verts, build_dims_sorted, initial_rotation):
@@ -191,6 +204,78 @@ def refinement_phase(hull_verts, build_dims, top_k_results):
     print(f"  Best refined score: {best_score:.4f}")
 
     return best_score, best_rotation, best_extents
+
+
+def refine_all(hull_verts, build_dims_sorted, fitting_results):
+    """Refine all fitting candidates and filter to those still fitting.
+
+    Returns:
+        refined_fits: list of (score, Rotation, extents) where refined score <= 1.0
+    """
+    print(f"\nRefining all {len(fitting_results):,} fitting candidates...")
+
+    refined_fits = []
+    report_interval = max(1, len(fitting_results) // 10)
+
+    for i, (coarse_score, rotation, _) in enumerate(fitting_results):
+        score, refined_rot, extents = refine(hull_verts, build_dims_sorted, rotation)
+
+        # Only keep if still fits after refinement
+        if score <= 1.0:
+            refined_fits.append((score, refined_rot, extents))
+
+        # Progress reporting
+        if (i + 1) % report_interval == 0 or i == len(fitting_results) - 1:
+            print(f"  [{100 * (i + 1) // len(fitting_results):3d}%] {i + 1}/{len(fitting_results)} refined, {len(refined_fits)} still fit")
+
+    print(f"  {len(refined_fits):,} refined orientations still fit after optimization")
+    return refined_fits
+
+
+def select_diverse(results, n=5):
+    """Select n diverse rotations using greedy farthest-point sampling.
+
+    Uses geodesic distance on SO(3) as the metric.
+
+    Args:
+        results: list of (score, Rotation, extents)
+        n: number of diverse solutions to select
+
+    Returns:
+        diverse_results: list of n (score, Rotation, extents) tuples
+    """
+    if len(results) <= n:
+        return results
+
+    print(f"\nSelecting {n} maximally diverse orientations from {len(results)} candidates...")
+
+    # Start with the best (lowest score)
+    results_sorted = sorted(results, key=lambda x: x[0])
+    selected = [results_sorted[0]]
+    remaining = results_sorted[1:]
+
+    # Greedy farthest-point sampling
+    for step in range(1, n):
+        max_min_dist = -1
+        best_idx = -1
+
+        # For each remaining candidate, compute min distance to selected set
+        for idx, (_, rot_candidate, _) in enumerate(remaining):
+            min_dist = min(
+                (rot_candidate * rot_selected.inv()).magnitude()
+                for _, rot_selected, _ in selected
+            )
+
+            if min_dist > max_min_dist:
+                max_min_dist = min_dist
+                best_idx = idx
+
+        selected.append(remaining[best_idx])
+        del remaining[best_idx]
+
+        print(f"  Solution {step + 1}: distance from nearest = {max_min_dist:.3f} rad ({np.degrees(max_min_dist):.1f}°)")
+
+    return selected
 
 
 def report_result(score, extents, rotation, build_dims):
@@ -284,22 +369,78 @@ def main():
         args.batch_size = max_batch
 
     # Phase 2: Coarse search
-    top_k_results = coarse_search(hull_verts, build_dims, args.samples, args.batch_size)
+    top_k_results, fitting_results = coarse_search(hull_verts, build_dims, args.samples, args.batch_size)
 
     # Phase 3: Refinement
     best_score, best_rotation, best_extents = refinement_phase(hull_verts, build_dims, top_k_results)
 
-    # Report
+    # Report best result
     report_result(best_score, best_extents, best_rotation, build_dims)
 
-    # Export rotated mesh if requested
+    # Export rotated mesh(es) if requested
     if args.output:
-        print(f"\nExporting rotated mesh to: {args.output}")
-        rotated_mesh = mesh.copy()
-        rotation_matrix = best_rotation.as_matrix()
-        rotated_mesh.vertices = rotated_mesh.vertices @ rotation_matrix.T
-        rotated_mesh.export(args.output)
-        print(f"  Saved successfully!")
+        build_dims_sorted = np.sort(build_dims)
+
+        # If model fits, find diverse solutions
+        if best_score <= 1.0 and len(fitting_results) > 0:
+            # Refine all fitting candidates
+            refined_fits = refine_all(hull_verts, build_dims_sorted, fitting_results)
+
+            if len(refined_fits) > 0:
+                # Select up to 5 diverse solutions
+                diverse_solutions = select_diverse(refined_fits, n=min(5, len(refined_fits)))
+
+                # Extract stem and extension from output path
+                import os
+                output_base = os.path.splitext(args.output)[0]
+                output_ext = os.path.splitext(args.output)[1] or '.stl'
+
+                print(f"\n{'=' * 60}")
+                print(f"  EXPORTING {len(diverse_solutions)} DIVERSE ORIENTATIONS")
+                print(f"{'=' * 60}")
+
+                # Export each diverse solution
+                for i, (score, rotation, extents) in enumerate(diverse_solutions, start=1):
+                    output_path = f"{output_base}_{i}{output_ext}"
+
+                    # Compute metrics
+                    extents_sorted = np.sort(extents)
+                    margins = build_dims_sorted - extents_sorted
+                    euler = rotation.as_euler('zyx', degrees=True)
+
+                    # Compute distance from first solution
+                    if i == 1:
+                        geodesic_dist = 0.0
+                    else:
+                        geodesic_dist = (rotation * diverse_solutions[0][1].inv()).magnitude()
+
+                    # Print summary
+                    print(f"\nSolution {i}:")
+                    print(f"  File:      {output_path}")
+                    print(f"  AABB:      {extents_sorted[0]:.1f} x {extents_sorted[1]:.1f} x {extents_sorted[2]:.1f} mm")
+                    print(f"  Margins:   +{margins[0]:.1f}, +{margins[1]:.1f}, +{margins[2]:.1f} mm")
+                    print(f"  Euler:     yaw={euler[0]:.1f}°, pitch={euler[1]:.1f}°, roll={euler[2]:.1f}°")
+                    print(f"  Distance:  {geodesic_dist:.3f} rad ({np.degrees(geodesic_dist):.1f}° from solution 1)")
+
+                    # Export
+                    rotated_mesh = mesh.copy()
+                    rotation_matrix = rotation.as_matrix()
+                    rotated_mesh.vertices = rotated_mesh.vertices @ rotation_matrix.T
+                    rotated_mesh.export(output_path)
+
+                print(f"\n{'=' * 60}")
+                print(f"  Saved {len(diverse_solutions)} rotated STL files successfully!")
+                print(f"{'=' * 60}")
+            else:
+                print("\nWarning: No fitting solutions remained after refinement.")
+        else:
+            # Model doesn't fit - export single best attempt anyway
+            print(f"\nModel does not fit, but exporting best attempt to: {args.output}")
+            rotated_mesh = mesh.copy()
+            rotation_matrix = best_rotation.as_matrix()
+            rotated_mesh.vertices = rotated_mesh.vertices @ rotation_matrix.T
+            rotated_mesh.export(args.output)
+            print(f"  Saved!")
 
     # Exit with appropriate code
     sys.exit(0 if best_score <= 1.0 else 1)
