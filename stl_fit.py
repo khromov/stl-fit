@@ -7,13 +7,18 @@ import sys
 import numpy as np
 
 from stl_fit_lib import (
+    DEFAULT_BUILD_VOLUME,
     DEFAULT_NUM_SAMPLES,
     DEFAULT_BATCH_SIZE,
     load_and_prepare,
+    compute_aabb_extents_batch,
     coarse_search,
     refinement_phase,
     refine,
     select_diverse,
+    detect_detail_direction,
+    compute_detail_up_score,
+    select_detail_up,
     report_result,
 )
 
@@ -52,6 +57,12 @@ def main():
         type=str,
         help="Output path for rotated STL (e.g., rotated.stl)"
     )
+    parser.add_argument(
+        "--detail-up",
+        action="store_true",
+        default=False,
+        help="Prefer orientations that place the most detailed surface facing up (+Z)"
+    )
 
     args = parser.parse_args()
 
@@ -69,6 +80,11 @@ def main():
 
     # Phase 1: Load and prepare
     hull_verts, mesh = load_and_prepare(args.stl)
+
+    # Detect detail direction if requested
+    detail_direction = None
+    if args.detail_up:
+        detail_direction, _ = detect_detail_direction(mesh)
 
     # Auto-adjust batch size if needed for memory
     max_memory_bytes = 1e9  # 1 GB
@@ -126,8 +142,11 @@ def main():
 
     # If model fits, find diverse solutions
     if best_score <= 1.0 and len(fitting_results) > 0:
-        # Select up to 10 diverse solutions from coarse results
-        diverse_coarse = select_diverse(fitting_results, n=min(10, len(fitting_results)))
+        # Select up to 10 solutions from coarse results
+        if detail_direction is not None:
+            diverse_coarse = select_detail_up(fitting_results, detail_direction, n=min(10, len(fitting_results)))
+        else:
+            diverse_coarse = select_diverse(fitting_results, n=min(10, len(fitting_results)))
 
         # Refine only the selected 10
         print(f"\nRefining {len(diverse_coarse)} diverse candidates...")
@@ -146,12 +165,15 @@ def main():
             output_base = os.path.splitext(args.output)[0]
             output_ext = os.path.splitext(args.output)[1] or '.stl'
 
-            # Add scale tag if model was scaled
+            # Add tags to output filename
+            if detail_direction is not None:
+                output_base = f"{output_base}_detailup"
             if scale_pct < 100.0:
                 output_base = f"{output_base}_{scale_pct:.0f}pct"
 
+            label = "DETAIL-UP ORIENTATIONS" if detail_direction is not None else "DIVERSE ORIENTATIONS"
             print(f"\n{'=' * 60}")
-            print(f"  EXPORTING {len(diverse_solutions)} DIVERSE ORIENTATIONS")
+            print(f"  EXPORTING {len(diverse_solutions)} {label}")
             print(f"{'=' * 60}")
 
             # Export each diverse solution
@@ -176,6 +198,10 @@ def main():
                 print(f"  Margins:   +{margins[0]:.1f}, +{margins[1]:.1f}, +{margins[2]:.1f} mm")
                 print(f"  Euler:     yaw={euler[0]:.1f}°, pitch={euler[1]:.1f}°, roll={euler[2]:.1f}°")
                 print(f"  Distance:  {geodesic_dist:.3f} rad ({np.degrees(geodesic_dist):.1f}° from solution 1)")
+                if detail_direction is not None:
+                    up_score = compute_detail_up_score(rotation, detail_direction)
+                    orientation = 'up' if up_score > 0.5 else 'side' if up_score > -0.5 else 'down'
+                    print(f"  Detail-up: {up_score:.3f} ({orientation})")
 
                 # Export
                 rotated_mesh = mesh.copy()

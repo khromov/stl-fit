@@ -19,6 +19,14 @@ DEFAULT_NUM_SAMPLES = 500_000
 DEFAULT_BATCH_SIZE = 5_000
 DEFAULT_NUM_REFINE_STARTS = 5
 
+CARDINAL_DIRECTIONS = np.array([
+    [1, 0, 0], [-1, 0, 0],
+    [0, 1, 0], [0, -1, 0],
+    [0, 0, 1], [0, 0, -1],
+], dtype=float)
+
+CARDINAL_LABELS = ["+X", "-X", "+Y", "-Y", "+Z", "-Z"]
+
 
 def load_and_prepare(stl_path):
     """Load STL, compute convex hull, and return centered hull vertices and mesh."""
@@ -248,6 +256,82 @@ def select_diverse(results, n=10):
         del remaining[best_idx]
 
         print(f"  Solution {step + 1}: distance from nearest = {max_min_dist:.3f} rad ({np.degrees(max_min_dist):.1f}°)")
+
+    return selected
+
+
+def detect_detail_direction(mesh):
+    """Detect which cardinal direction has the most triangles (geometric detail).
+
+    Classifies each face normal to its nearest cardinal direction (+/-X, +/-Y, +/-Z).
+    The direction with the highest triangle count is the "detail direction."
+
+    Args:
+        mesh: trimesh.Trimesh object with face_normals attribute
+
+    Returns:
+        detail_direction: (3,) numpy array, unit vector cardinal direction
+        counts: (6,) numpy array, triangle counts per cardinal direction
+            Order: [+X, -X, +Y, -Y, +Z, -Z]
+    """
+    normals = mesh.face_normals                          # (F, 3)
+    dots = normals @ CARDINAL_DIRECTIONS.T               # (F, 6)
+    classifications = dots.argmax(axis=1)                 # (F,)
+    counts = np.bincount(classifications, minlength=6)    # (6,)
+
+    best_idx = counts.argmax()
+    detail_direction = CARDINAL_DIRECTIONS[best_idx].copy()
+    total = len(normals)
+    pct = counts[best_idx] / total * 100
+
+    print(f"  Detail direction: {CARDINAL_LABELS[best_idx]} ({counts[best_idx]:,} triangles, {pct:.0f}% of {total:,} total)")
+
+    return detail_direction, counts
+
+
+def compute_detail_up_score(rotation, detail_direction):
+    """Compute how well a rotation places the detail direction facing up (+Z).
+
+    Args:
+        rotation: scipy.spatial.transform.Rotation object
+        detail_direction: (3,) numpy array, unit vector of the detail direction
+
+    Returns:
+        float: Z-component of the rotated detail direction, in [-1.0, 1.0].
+            1.0 means detail faces perfectly up, -1.0 means perfectly down.
+    """
+    return float(rotation.apply(detail_direction)[2])
+
+
+def select_detail_up(results, detail_direction, n=10):
+    """Select n fitting orientations that best place the detail direction facing up.
+
+    Args:
+        results: list of (score, Rotation, extents) where score <= 1.0
+        detail_direction: (3,) numpy array, unit vector of the detail direction
+        n: number of results to return
+
+    Returns:
+        list of (score, Rotation, extents) sorted by detail-up score descending
+    """
+    if len(results) <= n:
+        return sorted(results,
+                      key=lambda r: compute_detail_up_score(r[1], detail_direction),
+                      reverse=True)
+
+    print(f"\nSelecting {n} best detail-up orientations from {len(results)} candidates...")
+
+    scored = []
+    for score, rotation, extents in results:
+        up_score = compute_detail_up_score(rotation, detail_direction)
+        scored.append((up_score, score, rotation, extents))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    selected = []
+    for up_score, score, rotation, extents in scored[:n]:
+        selected.append((score, rotation, extents))
+        print(f"  Candidate: detail-up score = {up_score:.3f}, fit score = {score:.4f}")
 
     return selected
 

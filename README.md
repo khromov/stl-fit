@@ -50,6 +50,16 @@ Reduce the number of sampled rotations for quicker (but less thorough) search:
 python3 stl_fit.py --stl model.stl --samples 100000
 ```
 
+### Detail-Up Orientation
+
+Prefer orientations that place the most detailed surface (highest triangle count) facing up, improving print quality for detailed features:
+
+```bash
+python3 stl_fit.py --stl model.stl --detail-up
+```
+
+The tool detects which side of the model has the most triangles and selects orientations that face that side upward. This helps detailed sections print without support material artifacts.
+
 ### Automatic Export of Rotated Models
 
 When the model fits, the tool **automatically exports 10 diverse orientations** as new STL files:
@@ -83,6 +93,7 @@ python3 stl_fit.py --stl model.stl --output custom.stl
 | `--batch-size`   | int   | `5000`       | Rotations processed per batch (auto-adjusted for memory) |
 | `--seed`         | int   | _(none)_     | Random seed for reproducibility                          |
 | `--output`       | path  | _(auto)_     | Output path for rotated STL files (auto-generated)       |
+| `--detail-up`    | flag  | _(off)_      | Orient the most detailed surface facing up                |
 
 ## Testing
 
